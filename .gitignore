@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+
+# gerados pelo uso
+*.log
+perfil.json
+*.csv
+backup/
+
+# PyInstaller
+build/
+dist/
+*.spec
