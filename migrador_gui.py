@@ -474,7 +474,8 @@ class DialogoAtualizacao(QtWidgets.QDialog):
             self.barra.hide()
             self.lad.definir("arrow-circle-up-fill", "destaque", "destaque_claro")
             self.titulo.setText("Nova versão disponível")
-            self.sub.setText(f"Versão {versao_nova} · você está na {VERSAO}")
+            alfa = " (Alpha)" if (info or {}).get("pre") else ""
+            self.sub.setText(f"Versão {versao_nova}{alfa} · você está na {VERSAO}")
             self.estado.setText("O download leva poucos segundos e não interrompe uma migração "
                                 "em andamento.")
             self.btn_principal.definir("Atualizar agora", "download-simple", app.baixar_atualizacao)

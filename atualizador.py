@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 
 import versao
@@ -87,18 +88,33 @@ def _sha256(caminho):
     return h.hexdigest()
 
 
+def _completa(rel):
+    """Publicada (não rascunho) e com o .exe e o .sha256 já enviados."""
+    nomes = {a["name"] for a in rel.get("assets", [])}
+    return not rel.get("draft") and ARQUIVO in nomes and ARQUIVO + ".sha256" in nomes
+
+
 def buscar(versao_atual=versao.VERSAO, timeout=15):
-    """A versão publicada, se for mais nova que a atual (dict); senão None."""
-    with _abrir(versao.URL_ATUALIZACAO, timeout) as r:
-        rel = json.load(r)
+    """A versão publicada mais nova, se for mais nova que a atual (dict); senão None.
+    Pré-versões (Alpha/Beta) contam: o app inteiro ainda está nessa fase."""
+    try:
+        with _abrir(versao.URL_ATUALIZACAO, timeout) as r:
+            dados = json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:  # /releases/latest responde 404 quando nada foi publicado ainda
+            return None
+        raise
+    lista = dados if isinstance(dados, list) else [dados]
+    candidatas = [rel for rel in lista if _completa(rel)]  # incompleta: ainda subindo
+    if not candidatas:
+        return None
+    rel = max(candidatas, key=lambda r: versao_tupla(r.get("tag_name", "")))
     tag = rel.get("tag_name", "")
-    if rel.get("draft") or rel.get("prerelease") or versao_tupla(tag) <= versao_tupla(versao_atual):
+    if versao_tupla(tag) <= versao_tupla(versao_atual):
         return None
     arquivos = {a["name"]: a for a in rel.get("assets", [])}
-    if ARQUIVO not in arquivos or ARQUIVO + ".sha256" not in arquivos:
-        return None  # publicação incompleta (ainda subindo?): melhor não oferecer
     return {"versao": tag.lstrip("vV"), "notas": (rel.get("body") or "").strip(),
-            "pagina": rel.get("html_url", ""),
+            "pagina": rel.get("html_url", ""), "pre": bool(rel.get("prerelease")),
             "url": arquivos[ARQUIVO]["browser_download_url"],
             "tamanho": arquivos[ARQUIVO].get("size", 0),
             "url_sha": arquivos[ARQUIVO + ".sha256"]["browser_download_url"]}

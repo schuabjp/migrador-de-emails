@@ -11,7 +11,7 @@ Preserva a estrutura de pastas, as marcações (lido, respondido…) e a data or
 
 ## Baixar e usar (Windows 10/11)
 
-Baixe o **[MigradorEmails.exe](https://github.com/schuabjp/migrador-de-emails/releases/latest/download/MigradorEmails.exe)** e salve numa pasta sua, por exemplo `Documentos\Migrador` ou a Área de Trabalho. Não use `Arquivos de Programas`, porque ali o programa não consegue se atualizar. Depois é só abrir com dois cliques: não precisa instalar o Python nem nada mais.
+Na página de [Releases](https://github.com/schuabjp/migrador-de-emails/releases), baixe o **MigradorEmails.exe** da versão mais recente e salve numa pasta sua, por exemplo `Documentos\Migrador` ou a Área de Trabalho. Não use `Arquivos de Programas`, porque ali o programa não consegue se atualizar. Depois é só abrir com dois cliques: não precisa instalar o Python nem nada mais.
 
 - **Na primeira vez, o Windows pode mostrar "O Windows protegeu o computador"**, porque o programa ainda não tem assinatura digital. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 - **Atualizações:** ao abrir, o programa verifica se há versão nova (e repete a cada 6 horas). Quando houver, ele mostra as novidades e um botão **Atualizar agora**. O download é conferido (SHA-256) e, ao reiniciar, o programa já abre na versão nova. Se você preferir fechar sem reiniciar, a atualização é instalada ao fechar. Configurações e histórico continuam.
@@ -115,7 +115,7 @@ O `contas.csv` precisa ter as colunas `src_user,src_pass,dst_user,dst_pass`, com
 
 O GitHub Actions ([publicar.yml](.github/workflows/publicar.yml)) compila o `.exe` num Windows, confere se ele abre e cria a página da versão em [Releases](https://github.com/schuabjp/migrador-de-emails/releases), com as notas geradas a partir dos commits. Em poucos minutos, os programas da equipe mostram o aviso de atualização. Acompanhe a compilação na aba **Actions** do repositório.
 
-Use números crescentes no formato `vX.Y.Z`. O programa só oferece versões maiores que a que está rodando.
+Use números crescentes no formato `vX.Y.Z`. O programa só oferece versões maiores que a que está rodando. Enquanto a versão começar com `0.` (ex.: `v0.1.0`), ela é publicada como pré-versão, com o título "(Alpha)"; os programas da equipe também recebem essas versões.
 
 Para gerar um `.exe` de teste na sua máquina:
 

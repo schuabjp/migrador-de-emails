@@ -38,10 +38,15 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "o executável falhou ao abrir (código $($p.ExitCode))" }
 
       - name: Publicar a Release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create ${{ github.ref_name }}
-          dist/MigradorEmails.exe dist/MigradorEmails.exe.sha256
-          --title "Migrador de E-mails ${{ github.ref_name }}"
-          --generate-notes
+        run: |
+          # enquanto a versão for 0.x, ela sai marcada como pré-versão (Alpha)
+          $tag = "${{ github.ref_name }}"
+          $titulo = "Migrador de E-mails $tag"
+          $extra = @()
+          if ($tag -match '^v?0\.') { $titulo += " (Alpha)"; $extra += "--prerelease" }
+          gh release create $tag dist/MigradorEmails.exe dist/MigradorEmails.exe.sha256 `
+            --title $titulo --generate-notes @extra
+          if ($LASTEXITCODE -ne 0) { throw "falha ao criar a Release" }
