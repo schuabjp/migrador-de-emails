@@ -120,6 +120,20 @@ def buscar(versao_atual=versao.VERSAO, timeout=15):
             "url_sha": arquivos[ARQUIVO + ".sha256"]["browser_download_url"]}
 
 
+def explicar(erro):
+    """Motivo de uma consulta que falhou, em palavras para quem usa o programa."""
+    if isinstance(erro, urllib.error.HTTPError):
+        if erro.code in (403, 429):
+            return ("O GitHub limitou as consultas deste computador por enquanto. "
+                    "Tente de novo daqui a alguns minutos.")
+        if erro.code >= 500:
+            return "O GitHub está com problemas agora. Tente de novo mais tarde."
+        return f"O GitHub respondeu com o código {erro.code}. Tente de novo mais tarde."
+    if isinstance(erro, (urllib.error.URLError, OSError, http.client.HTTPException)):
+        return "Sem conexão com o GitHub. Confira a internet e tente de novo."
+    return f"Erro inesperado: {erro}"
+
+
 def baixar(info, progresso=None):
     """Baixa para MigradorEmails.novo.exe e confere o SHA-256. PermissionError
     significa que a pasta do programa não aceita gravação (ex.: Arquivos de Programas)."""

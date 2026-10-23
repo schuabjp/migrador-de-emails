@@ -1860,7 +1860,7 @@ class App(QtWidgets.QMainWindow):
                 self.fila.put(("atualizacao", atualizador.buscar(), None, manual))
             except Exception as e:  # sem internet, GitHub fora do ar...
                 atualizador.registrar(f"falha ao procurar atualização: {e!r}")
-                self.fila.put(("atualizacao", None, str(e), manual))
+                self.fila.put(("atualizacao", None, atualizador.explicar(e), manual))
         threading.Thread(target=tarefa, daemon=True).start()
 
     def _resultado_busca(self, info, erro, manual):
@@ -1871,9 +1871,9 @@ class App(QtWidgets.QMainWindow):
             if manual or (nova and not self.rodando):  # durante migração, só o aviso discreto
                 self.abrir_atualizacao()
         elif manual and erro:
-            avisar(self, "Atualizações", f"Não foi possível verificar agora:\n{erro}")
-        elif manual:
-            self.toast.mostrar(f"Você já está na versão mais recente ({VERSAO}).")
+            avisar(self, "Não foi possível verificar", erro)
+        elif manual:  # nada mais novo publicado (ou nada publicado ainda): não é erro
+            self.toast.mostrar(f"Você já está com a versão mais recente instalada ({VERSAO}).")
 
     def abrir_atualizacao(self):
         if not (self.atualizacao or self.atualizacao_pronta):
