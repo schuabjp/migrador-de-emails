@@ -1,6 +1,6 @@
 # Migrador de E-mails
 
-Migra caixas de e-mail entre servidores IMAP, sem MailStore e sem instalar nada além do Python. Funciona como **aplicativo desktop** (com gráficos de andamento) ou pelo **terminal**.
+Migra caixas de e-mail entre servidores IMAP, sem MailStore. Funciona como **aplicativo desktop** (com gráficos de andamento, tema claro e escuro) ou pelo **terminal**.
 
 - **Servidor → Servidor**: copia de um IMAP para outro.
 - **Exportar backup**: salva as mensagens em arquivos `.eml`, uma pasta por pasta do e-mail.
@@ -19,14 +19,20 @@ Baixe o **[MigradorEmails.exe](https://github.com/schuabjp/migrador-de-emails/re
 
 ## Rodar pelo código
 
-- Python 3 (testado no 3.14), com o Tkinter que já vem no instalador oficial do Windows.
-- Nenhuma biblioteca externa.
+- Python 3 (testado no 3.14).
+- O aplicativo desktop usa [PySide6](https://doc.qt.io/qtforpython-6/) (Qt) e [QtAwesome](https://github.com/spyder-ide/qtawesome) (ícones Phosphor):
+  ```
+  pip install -r requirements.txt
+  ```
+- O modo terminal (`migrar_email.py`) não precisa de nenhuma biblioteca externa.
 
 ## Aplicativo desktop
 
 ```
 pythonw migrador_gui.py
 ```
+
+A interface fica em três arquivos: [migrador_gui.py](migrador_gui.py) (telas e lógica), [componentes.py](componentes.py) (cartões, botões, tabelas, barras e gráficos desenhados com animação) e [tema.py](tema.py) (cores, fontes, ícones e o tema claro/escuro).
 
 1. Escolha o tipo de migração.
 2. Preencha servidor, usuário e senha de cada conta e clique em **Testar conexão**.
@@ -35,16 +41,18 @@ pythonw migrador_gui.py
 
 A tela **Andamento** mostra, em tempo real:
 
-- os totais de mensagens copiadas, já existentes e com erro, o volume transferido e o tempo restante;
-- o progresso da pasta atual e o progresso total;
-- os gráficos de velocidade e de resultado por pasta;
-- a tabela de pastas, com as pendentes, a em andamento e as concluídas;
+- os totais de mensagens copiadas, já existentes e com erro e o volume transferido;
+- o anel com o progresso total e as barras da pasta atual e do total;
+- o gráfico de velocidade (passe o mouse para ver cada momento), com o tempo decorrido e o restante;
+- a tabela de pastas, com a situação e o progresso de cada uma: pendentes, em andamento e concluídas;
 - a aba **Problemas**, que junta todos os erros e avisos;
 - o registro completo.
 
 O botão **Parar** interrompe com segurança.
 
 O **Histórico** guarda um relatório de cada execução, com o resultado de cada pasta, de cada conta e de cada problema. O relatório é salvo durante a migração, a cada pasta concluída, então nada se perde se o computador desligar. Ele pode ser exportado em CSV, que abre direto no Excel.
+
+Em **Opções › Aparência** dá para escolher o tema claro, o escuro ou o mesmo do Windows.
 
 As configurações ficam salvas em `%APPDATA%\MigradorEmails\perfil.json`. **As senhas nunca são gravadas em disco.**
 
@@ -112,8 +120,8 @@ Use números crescentes no formato `vX.Y.Z`. O programa só oferece versões mai
 Para gerar um `.exe` de teste na sua máquina:
 
 ```
-pip install pyinstaller
+pip install -r requirements.txt pyinstaller
 python build.py 1.2.0
 ```
 
-O executável sai em `dist\MigradorEmails.exe`. Os arquivos que o build usa são `build.py`, `versao.py`, `icone.ico` e `icone.png`.
+O executável sai em `dist\MigradorEmails.exe`, com cerca de 27 MB. O `build.py` deixa de fora a parte do Qt que o app não usa; sem isso, o executável passaria de 70 MB e demoraria mais para abrir. Os arquivos que o build usa são `build.py`, `versao.py`, `requirements.txt`, `icone.ico` e `icone.png`.

@@ -24,8 +24,8 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Instalar o PyInstaller
-        run: python -m pip install --disable-pip-version-check pyinstaller==6.22.3
+      - name: Instalar as dependências e o PyInstaller
+        run: python -m pip install --disable-pip-version-check -r requirements.txt pyinstaller==6.22.3
 
       - name: Gerar o executável
         run: python build.py ${{ github.ref_name }}

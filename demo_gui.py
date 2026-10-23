@@ -125,14 +125,17 @@ me.Conta.conectar = conectar_falso
 
 
 def main():
+    qt = gui.iniciar_qt()
     app = gui.App()
     app.titulo_base = "Migrador de E-mails — MODO DEMONSTRAÇÃO (servidores falsos)"
-    app.title(app.titulo_base)
+    app.setWindowTitle(app.titulo_base)
     for k, v in {"src_host": "demo.origem", "src_user": "voce@antigo.com", "src_pass": "123",
                  "dst_host": "demo.destino", "dst_user": "voce@novo.com", "dst_pass": "123"}.items():
         if not app.v[k].get():
             app.v[k].set(v)
-    app.mainloop()
+    app.show()
+    gui.tema.barra_titulo(app)
+    qt.exec()
 
 
 if __name__ == "__main__":

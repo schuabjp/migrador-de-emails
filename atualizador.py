@@ -182,13 +182,10 @@ def instalar(reabrir=True):
 
 
 def _avisar(texto):
+    """Caixa de aviso nativa do Windows (aqui ainda não há interface carregada)."""
     try:
-        import tkinter as tk
-        from tkinter import messagebox
-        raiz = tk.Tk()
-        raiz.withdraw()
-        messagebox.showwarning("Migrador de E-mails", texto, parent=raiz)
-        raiz.destroy()
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, texto, "Migrador de E-mails", 0x30)  # ícone de aviso
     except Exception:
         pass
 
