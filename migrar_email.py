@@ -176,6 +176,12 @@ class Ui:
     def conta_iniciada(self, n, total, src_user, dst_user):
         pass
 
+    def conta_concluida(self, n, status, detalhe):
+        pass
+
+    def pasta_iniciada(self, nome, mensagens, ja_existem):
+        pass
+
     def pasta_concluida(self, linha):
         """linha = [pasta, mensagens, copiadas, já existiam, erros]"""
         pass
@@ -459,6 +465,7 @@ def imap2imap(a):
         tamanhos = {u: t for u, _, t in origem}
         ui.info(f"origem {len(origem)} · já no destino {puladas} · "
                 f"{ui.c('negrito', f'novas {len(pendentes)}')}")
+        ui.pasta_iniciada(nome, len(origem), puladas)
 
         # 2) baixa e envia somente as novas
         st = Stats(puladas=puladas)
@@ -487,6 +494,7 @@ def exportar(a):
         os.makedirs(caminho, exist_ok=True)
         uids = uids_da_pasta(src, nome)
         ui.secao(f"{nome} ({len(uids)} mensagens)")
+        ui.pasta_iniciada(nome, len(uids), 0)
         st, inicio = Stats(), time.time()
         for n, uid in enumerate(uids, 1):
             arq = os.path.join(caminho, f"{uid}.eml")
@@ -544,6 +552,7 @@ def importar(a):
         candidatos = [(arq, chave_msg(ler_cabecalho(arq)))
                       for arq in (os.path.join(raiz, nome) for nome in emls)]
         novas, puladas = separar_novas(candidatos, existentes)
+        ui.pasta_iniciada(pasta, len(emls), puladas)
 
         st, inicio = Stats(puladas=puladas), time.time()
         for n, arq in enumerate(novas, 1):
@@ -630,6 +639,7 @@ def executar_lote(a):
         except Exception as e:
             falhou, status, detalhe = True, "FALHA", str(e)
             ui.erro(f"{conta.src_user}: {e}")
+        ui.conta_concluida(n, status, detalhe)
         problemas += falhou
         cor = "vermelho" if falhou else "verde"
         linhas.append([conta.src_user, ui.c(cor, status), detalhe])

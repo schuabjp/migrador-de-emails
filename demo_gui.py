@@ -126,7 +126,8 @@ me.Conta.conectar = conectar_falso
 
 def main():
     app = gui.App()
-    app.title("Migrador de E-mails — MODO DEMONSTRAÇÃO (servidores falsos)")
+    app.titulo_base = "Migrador de E-mails — MODO DEMONSTRAÇÃO (servidores falsos)"
+    app.title(app.titulo_base)
     for k, v in {"src_host": "demo.origem", "src_user": "voce@antigo.com", "src_pass": "123",
                  "dst_host": "demo.destino", "dst_user": "voce@novo.com", "dst_pass": "123"}.items():
         if not app.v[k].get():

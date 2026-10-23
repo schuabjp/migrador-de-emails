@@ -25,7 +25,18 @@ pythonw migrador_gui.py
 3. (Opcional) Clique em **Carregar pastas da origem** e desmarque as que não quiser migrar.
 4. Clique em **Iniciar**.
 
-A tela **Andamento** mostra as mensagens copiadas, as que já existiam, os erros, a velocidade de transferência, o resultado por pasta e o log detalhado. O botão **Parar** interrompe com segurança.
+A tela **Andamento** mostra, em tempo real:
+
+- os totais de mensagens copiadas, já existentes e com erro, o volume transferido e o tempo restante;
+- o progresso da pasta atual e o progresso total;
+- os gráficos de velocidade e de resultado por pasta;
+- a tabela de pastas, com as pendentes, a em andamento e as concluídas;
+- a aba **Problemas**, que junta todos os erros e avisos;
+- o registro completo.
+
+O botão **Parar** interrompe com segurança.
+
+O **Histórico** guarda um relatório de cada execução, com o resultado de cada pasta, de cada conta e de cada problema. O relatório é salvo durante a migração, a cada pasta concluída, então nada se perde se o computador desligar. Ele pode ser exportado em CSV, que abre direto no Excel.
 
 As configurações ficam salvas em `%APPDATA%\MigradorEmails\perfil.json`. **As senhas nunca são gravadas em disco.**
 
