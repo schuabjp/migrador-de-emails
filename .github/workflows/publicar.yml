@@ -1,0 +1,47 @@
+# Publica uma versão nova do MigradorEmails.exe.
+#
+#   git tag v1.2.0
+#   git push origin v1.2.0
+#
+# O GitHub compila o .exe num Windows e cria a página da versão (Releases) com o
+# executável e o .sha256. Os apps da equipe encontram a versão nova sozinhos.
+name: Publicar versão
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write  # para criar a Release
+
+jobs:
+  publicar:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Instalar o PyInstaller
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.22.3
+
+      - name: Gerar o executável
+        run: python build.py ${{ github.ref_name }}
+
+      - name: Testar o executável
+        shell: pwsh
+        run: |
+          # o .exe monta a interface e fecha; se faltar algo no pacote, a versão não é publicada
+          $p = Start-Process dist\MigradorEmails.exe -ArgumentList "--verificar" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "o executável falhou ao abrir (código $($p.ExitCode))" }
+
+      - name: Publicar a Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create ${{ github.ref_name }}
+          dist/MigradorEmails.exe dist/MigradorEmails.exe.sha256
+          --title "Migrador de E-mails ${{ github.ref_name }}"
+          --generate-notes

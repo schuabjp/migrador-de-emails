@@ -9,7 +9,15 @@ Migra caixas de e-mail entre servidores IMAP, sem MailStore e sem instalar nada 
 
 Preserva a estrutura de pastas, as marcações (lido, respondido…) e a data original das mensagens. **Nada é duplicado**: antes de copiar, compara Message-ID, data, assunto e remetente com o que já está no destino. Por isso dá para interromper e rodar de novo, e a migração continua de onde parou.
 
-## Requisitos
+## Baixar e usar (Windows 10/11)
+
+Baixe o **[MigradorEmails.exe](https://github.com/schuabjp/migrador-de-emails/releases/latest/download/MigradorEmails.exe)** e salve numa pasta sua, por exemplo `Documentos\Migrador` ou a Área de Trabalho. Não use `Arquivos de Programas`, porque ali o programa não consegue se atualizar. Depois é só abrir com dois cliques: não precisa instalar o Python nem nada mais.
+
+- **Na primeira vez, o Windows pode mostrar "O Windows protegeu o computador"**, porque o programa ainda não tem assinatura digital. Clique em **Mais informações** e depois em **Executar assim mesmo**.
+- **Atualizações:** ao abrir, o programa verifica se há versão nova (e repete a cada 6 horas). Quando houver, ele mostra as novidades e um botão **Atualizar agora**. O download é conferido (SHA-256) e, ao reiniciar, o programa já abre na versão nova. Se você preferir fechar sem reiniciar, a atualização é instalada ao fechar. Configurações e histórico continuam.
+- O que acontece nas atualizações fica registrado em `%APPDATA%\MigradorEmails\atualizacao.log`.
+
+## Rodar pelo código
 
 - Python 3 (testado no 3.14), com o Tkinter que já vem no instalador oficial do Windows.
 - Nenhuma biblioteca externa.
@@ -87,8 +95,25 @@ O `contas.csv` precisa ter as colunas `src_user,src_pass,dst_user,dst_pass`, com
 
 - **Gmail, Outlook e Yahoo** exigem uma *senha de app* em vez da senha normal quando a verificação em duas etapas está ativa.
 - Para um primeiro teste com uma conta real, use **Exportar backup**: ele só lê o servidor e nunca altera nada nele.
-- Para gerar um `.exe` que abre com duplo clique:
-  ```
-  pip install pyinstaller
-  pyinstaller --onefile --windowed --name MigradorEmails migrador_gui.py
-  ```
+
+## Publicar uma versão nova
+
+1. Faça o commit das mudanças e envie: `git push`.
+2. Crie a tag da versão e envie:
+   ```
+   git tag v1.2.0
+   git push origin v1.2.0
+   ```
+
+O GitHub Actions ([publicar.yml](.github/workflows/publicar.yml)) compila o `.exe` num Windows, confere se ele abre e cria a página da versão em [Releases](https://github.com/schuabjp/migrador-de-emails/releases), com as notas geradas a partir dos commits. Em poucos minutos, os programas da equipe mostram o aviso de atualização. Acompanhe a compilação na aba **Actions** do repositório.
+
+Use números crescentes no formato `vX.Y.Z`. O programa só oferece versões maiores que a que está rodando.
+
+Para gerar um `.exe` de teste na sua máquina:
+
+```
+pip install pyinstaller
+python build.py 1.2.0
+```
+
+O executável sai em `dist\MigradorEmails.exe`. Os arquivos que o build usa são `build.py`, `versao.py`, `icone.ico` e `icone.png`.
