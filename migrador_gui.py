@@ -87,7 +87,8 @@ COLS_PASTAS = [("sit", "Situação", 150, "w", False, "status"), ("conta", "Cont
                ("msgs", "Mensagens", 96, "e", False, "num"), ("cop", "Copiadas", 92, "e", False, "num"),
                ("pul", "Já existiam", 100, "e", False, "num"), ("err", "Erros", 64, "e", False, "num"),
                ("tam", "Tamanho", 90, "e", False, "num"), ("tempo", "Tempo", 76, "e", False, "num")]
-VISIVEIS_ANDAMENTO = ["sit", "conta", "pasta", "prog", "msgs", "cop", "pul", "err"]
+VISIVEIS_ANDAMENTO = ["sit", "pasta", "prog", "msgs", "cop", "pul", "err"]
+SPAN_GRUPO = 3  # cabeçalho de conta ocupa Situação + Conta (escondida) + Pasta
 COLS_PROBLEMAS = [("tipo", "Tipo", 110, "w", False, "status"), ("hora", "Hora", 100, "w", False, "mono"),
                   ("conta", "Conta", 180, "w", False), ("pasta", "Pasta", 180, "w", False),
                   ("msg", "Mensagem", 420, "w", True)]
@@ -153,20 +154,59 @@ def carregar_historico():
     return sorted(execucoes, key=lambda r: r.get("inicio", 0), reverse=True)
 
 
+def progresso_pasta(p):
+    """0 a 1, ou None se a pasta ainda nem começou."""
+    if p["status"] == "pendente":
+        return None
+    if p["status"] in ("ok", "erros"):
+        return 1.0
+    feitas = p["copiadas"] + p["puladas"] + p["erros"]
+    return min(1.0, feitas / p["mensagens"]) if p["mensagens"] else 0.0
+
+
+def tempo_curto(segundos, comecou=True):
+    return me.fmt_tempo(segundos) if segundos >= 1 else "<1s" if comecou else "—"
+
+
 def linha_pasta(p):
     texto, icone, tag = SITUACAO_PASTA[p["status"]]
-    feitas = p["copiadas"] + p["puladas"] + p["erros"]
-    if p["status"] == "pendente":
-        prog = None
-    elif p["status"] in ("ok", "erros"):
-        prog = 1.0
+    msgs = p["mensagens"]  # None: pasta listada, mas ainda não aberta
+    return (((icone, texto), p["conta"], decodificar_utf7(p["pasta"]), progresso_pasta(p),
+             "—" if msgs is None else num(msgs), num(p["copiadas"]), num(p["puladas"]),
+             num(p["erros"]), me.fmt_bytes(p["bytes"]) if p["bytes"] else "—",
+             tempo_curto(p["segundos"], p["status"] != "pendente")), (tag,) if tag else ())
+
+
+def linha_grupo(c, pastas):
+    """Cabeçalho de uma conta (no lote) na tabela de pastas, com os totais das pastas dela."""
+    texto, icone, _ = SITUACAO_CONTA[c["status"]]
+    soma = lambda k: sum(p[k] or 0 for p in pastas)  # noqa: E731
+    feitas = sum(1 for p in pastas if p["status"] in ("ok", "erros"))
+    if c["status"] == "FALHA":
+        sub, prog = c["detalhe"] or "A conta falhou", None
     else:
-        prog = min(1.0, feitas / p["mensagens"]) if p["mensagens"] else 0.0
-    return (((icone, texto), p["conta"], decodificar_utf7(p["pasta"]), prog, num(p["mensagens"]),
-             num(p["copiadas"]), num(p["puladas"]), num(p["erros"]),
-             me.fmt_bytes(p["bytes"]) if p["bytes"] else "—",
-             me.fmt_tempo(p["segundos"]) if p["segundos"] >= 1 else
-             "<1s" if p["status"] != "pendente" else "—"), (tag,) if tag else ())
+        partes = [f"→ {c['dst']}"]
+        if pastas:
+            partes.append(f"{feitas} de {plural(len(pastas), 'pasta', 'pastas')}")
+        elif c["status"] == "pendente":
+            partes.append("aguardando a vez")
+        sub = " · ".join(partes)
+        if c["status"] in ("OK", "COM ERROS"):
+            prog = 1.0
+        elif pastas:  # média do progresso das pastas (as que não começaram contam como 0)
+            prog = sum(progresso_pasta(p) or 0 for p in pastas) / len(pastas)
+        else:
+            prog = None if c["status"] == "pendente" else 0.0
+    info = {"src": c["src"], "sub": sub, "sit": (icone, texto), "falha": c["status"] == "FALHA"}
+    com_dados = bool(pastas)
+    return ((info, c["src"], "", prog,
+             num(soma("mensagens")) if com_dados else "—",
+             num(soma("copiadas")) if com_dados else "—",
+             num(soma("puladas")) if com_dados else "—",
+             num(soma("erros")) if com_dados else "—",
+             me.fmt_bytes(soma("bytes")) if soma("bytes") else "—",
+             tempo_curto(soma("segundos"), com_dados)),
+            ("ativa",) if c["status"] == "andamento" else ())
 
 
 def linha_conta(c):
@@ -276,6 +316,9 @@ class GuiUi(me.Ui):
 
     def conta_iniciada(self, n, total, src_user, dst_user):
         self.fila.put(("conta", n, total, src_user, dst_user))
+
+    def pastas_listadas(self, nomes):
+        self.fila.put(("pastas_lista", list(nomes)))
 
     def conta_concluida(self, n, status, detalhe):
         self.fila.put(("conta_ok", n, status, detalhe))
@@ -1063,6 +1106,7 @@ class App(QtWidgets.QMainWindow):
         self.abas = Abas()
         self.tab_pastas = self.abas.adicionar("pastas", "Pastas", Tabela(
             COLS_PASTAS, vazio=("folders", "As pastas aparecem aqui assim que a migração começar")))
+        self.tab_pastas.span_grupo = SPAN_GRUPO
         self.tab_contas = self.abas.adicionar("contas", "Contas", Tabela(
             COLS_CONTAS, vazio=("users-three", "Nenhuma conta")))
         self.tab_problemas = self.abas.adicionar("problemas", "Problemas", Tabela(
@@ -1153,6 +1197,7 @@ class App(QtWidgets.QMainWindow):
         self.tot = {"copiadas": 0, "puladas": 0, "erros": 0, "bytes": 0}
         self.atual = self._novo_atual()
         self.linhas = {}  # iid da tabela -> registro da pasta (o mesmo do relatório)
+        self.pastas_conta = {}  # lote: nº da conta -> registros das pastas dela
         self.linha_atual = None
         self.erros_atual = 0
         self.conta_n, self.conta_atual, self.contas_total, self.contas_feitas = 0, "", 0, 0
@@ -1236,9 +1281,14 @@ class App(QtWidgets.QMainWindow):
             feitas = min(self._processadas(), self.total_geral)
             pct = feitas / self.total_geral
             self.progresso.definir("total", "Total", f"{num(feitas)} de {num(self.total_geral)} mensagens")
-        elif self.contas_total:
-            pct = self.contas_feitas / self.contas_total
+        elif self.contas_total:  # contas concluídas + o andamento da conta atual
+            atual = self._prog_conta(self.conta_n) if self.conta_n > self.contas_feitas else 0
+            pct = (self.contas_feitas + atual) / self.contas_total
             self.progresso.definir("total", "Contas", f"{self.contas_feitas} de {self.contas_total}")
+        elif self.total_pastas and self.linhas:  # sem a contagem de mensagens: pelas pastas
+            pct = sum(progresso_pasta(p) or 0 for p in self.linhas.values()) / self.total_pastas
+            self.progresso.definir("total", "Total", f"{self.pastas_feitas} de "
+                                   f"{plural(self.total_pastas, 'pasta', 'pastas')}")
         else:
             self.progresso.definir("total", "Total", plural(self.pastas_feitas, "pasta concluída",
                                                             "pastas concluídas"))
@@ -1338,6 +1388,7 @@ class App(QtWidgets.QMainWindow):
         self.hist_abas = Abas()
         self.hist_pastas = self.hist_abas.adicionar("pastas", "Pastas", Tabela(
             COLS_PASTAS, vazio=("folders", "Nenhuma pasta nesta execução")))
+        self.hist_pastas.span_grupo = SPAN_GRUPO
         self.hist_contas = self.hist_abas.adicionar("contas", "Contas", Tabela(
             COLS_CONTAS, vazio=("users-three", "Nenhuma conta")))
         self.hist_problemas = self.hist_abas.adicionar("problemas", "Problemas", Tabela(
@@ -1393,10 +1444,19 @@ class App(QtWidgets.QMainWindow):
             f"{plural(t['erros'], 'erro', 'erros')} · {me.fmt_bytes(t['bytes'])} em "
             f"{me.fmt_tempo(rel.get('duracao', 0))}"
             + (f"\n{rel['resumo'].splitlines()[0]}" if rel.get("resumo") else ""))
-        self.hist_pastas.colunas_visiveis([c[0] for c in COLS_PASTAS if lote or c[0] != "conta"])
+        self.hist_pastas.colunas_visiveis([c[0] for c in COLS_PASTAS if c[0] != "conta"])
         self.hist_problemas.colunas_visiveis([c[0] for c in COLS_PROBLEMAS if lote or c[0] != "conta"])
-        for p in rel["pastas"]:
-            self.hist_pastas.inserir(*linha_pasta(p))
+        if lote:  # pastas agrupadas por conta; abertas só as contas que não terminaram bem
+            for c in rel["contas"]:
+                pastas = [p for p in rel["pastas"] if p.get("conta_n", c["n"]) == c["n"]
+                          and (p.get("conta_n") or p["conta"] == c["src"])]
+                gid = f"g{c['n']}"
+                self.hist_pastas.grupo(gid, *linha_grupo(c, pastas), aberto=c["status"] != "OK")
+                for p in pastas:
+                    self.hist_pastas.inserir(*linha_pasta(p), grupo=gid)
+        else:
+            for p in rel["pastas"]:
+                self.hist_pastas.inserir(*linha_pasta(p))
         for c in rel["contas"]:
             self.hist_contas.inserir(*linha_conta(c))
         for pr in rel["problemas"]:
@@ -1565,10 +1625,10 @@ class App(QtWidgets.QMainWindow):
         lote = modo == "lote"
         self.rel = self._novo_relatorio(a, modo)
         self.lbl_rota.setText(self._rota(a, modo, len(self.contas_csv)))
-        self.tab_pastas.colunas_visiveis([c for c in VISIVEIS_ANDAMENTO if lote or c != "conta"])
+        self.tab_pastas.colunas_visiveis(VISIVEIS_ANDAMENTO)
         self.tab_problemas.colunas_visiveis([c[0] for c in COLS_PROBLEMAS if lote or c[0] != "conta"])
         self.abas.visivel("contas", lote)
-        self.abas.mostrar("contas" if lote else "pastas")
+        self.abas.mostrar("pastas")  # no lote, as pastas aparecem agrupadas por conta
         if modo in ("imap2imap", "export") and self.pastas_origem:
             for nome, (sel, n, _) in self.pastas_origem.items():
                 if sel:  # já aparecem como pendentes: dá para ver o que falta
@@ -1582,6 +1642,8 @@ class App(QtWidgets.QMainWindow):
                      "copiadas": 0, "puladas": 0, "erros": 0}
                 self.rel["contas"].append(c)
                 self.tab_contas.inserir(*linha_conta(c), iid=f"c{n}")
+                self.pastas_conta[n] = []
+                self.tab_pastas.grupo(f"g{n}", *linha_grupo(c, []))
         self.rodando = True
         self.inicio = time.time()
         self._salvar_relatorio()
@@ -1699,15 +1761,34 @@ class App(QtWidgets.QMainWindow):
 
     def _nova_linha(self, nome, mensagens, status, ja=0):
         iid = f"{self.conta_n}:{nome}"
-        p = {"conta": self.conta_atual, "pasta": nome, "status": status, "mensagens": mensagens,
-             "copiadas": 0, "puladas": ja, "erros": 0, "bytes": 0, "segundos": 0}
+        p = {"conta": self.conta_atual, "conta_n": self.conta_n, "pasta": nome, "status": status,
+             "mensagens": mensagens, "copiadas": 0, "puladas": ja, "erros": 0, "bytes": 0,
+             "segundos": 0}
         self.linhas[iid] = p
         self.rel["pastas"].append(p)
-        self.tab_pastas.inserir(*linha_pasta(p), iid=iid, rolar=True)
+        if self.contas_total and self.conta_n in self.pastas_conta:  # lote: dentro da conta
+            self.pastas_conta[self.conta_n].append(p)
+            self.tab_pastas.inserir(*linha_pasta(p), iid=iid, grupo=f"g{self.conta_n}")
+            self._atualizar_grupo(self.conta_n)
+        else:
+            self.tab_pastas.inserir(*linha_pasta(p), iid=iid, rolar=True)
         return iid
 
     def _atualizar_linha(self, iid):
-        self.tab_pastas.atualizar(iid, *linha_pasta(self.linhas[iid]))
+        p = self.linhas[iid]
+        self.tab_pastas.atualizar(iid, *linha_pasta(p))
+        if self.contas_total and p.get("conta_n") in self.pastas_conta:
+            self._atualizar_grupo(p["conta_n"])
+
+    def _atualizar_grupo(self, n, aberto=None):
+        """Cabeçalho da conta n na tabela de pastas (totais e progresso da conta)."""
+        c = self.rel["contas"][n - 1]
+        self.tab_pastas.grupo(f"g{n}", *linha_grupo(c, self.pastas_conta.get(n, [])), aberto=aberto)
+
+    def _prog_conta(self, n):
+        if n not in self.pastas_conta:
+            return 0.0
+        return linha_grupo(self.rel["contas"][n - 1], self.pastas_conta[n])[0][3] or 0.0
 
     def _atualizar_linha_viva(self):
         if not self.linha_atual:
@@ -1717,9 +1798,11 @@ class App(QtWidgets.QMainWindow):
                  bytes=a["bytes"], segundos=time.time() - (a["inicio_pasta"] or time.time()))
         self._atualizar_linha(self.linha_atual)
 
-    def _atualizar_conta(self, n):
+    def _atualizar_conta(self, n, aberto=None):
         c = self.rel["contas"][n - 1]
         self.tab_contas.atualizar(f"c{n}", *linha_conta(c))
+        if n in self.pastas_conta:
+            self._atualizar_grupo(n, aberto)
 
     def _fechar_pasta_parcial(self):
         """Pasta interrompida no meio: registra o que chegou a ser feito."""
@@ -1811,15 +1894,24 @@ class App(QtWidgets.QMainWindow):
             self.lbl_rota.setText(f"conta {n} de {total} · {src} → {dst}")
             if n <= len(self.rel["contas"]):
                 self.rel["contas"][n - 1]["status"] = "andamento"
-                self._atualizar_conta(n)
+                self._atualizar_conta(n, aberto=True)  # a conta da vez fica aberta
                 self.tab_contas.ver(f"c{n}")
+                self.tab_pastas.ver(f"g{n}")
+            self._prog_mudou = True
+        elif tipo == "pastas_lista":  # as pastas desta conta já aparecem como pendentes
+            for nome in ev[1]:
+                if f"{self.conta_n}:{nome}" not in self.linhas:
+                    self._nova_linha(nome, None, "pendente")
+            if not self.contas_total and not self.total_pastas:
+                self.total_pastas = len(ev[1])
             self._prog_mudou = True
         elif tipo == "conta_ok":
             _, n, status, detalhe = ev
             self._fechar_pasta_parcial()
             if n <= len(self.rel["contas"]):
                 self.rel["contas"][n - 1].update(status=status, detalhe=detalhe)
-                self._atualizar_conta(n)
+                # concluída sem erros: fecha para a lista não crescer; com problema, fica à vista
+                self._atualizar_conta(n, aberto=status != "OK")
             self.contas_feitas = n
             self._prog_mudou = True
             self._salvar_relatorio()

@@ -778,6 +778,8 @@ class Modelo(QtCore.QAbstractTableModel):
         if papel == Qt.UserRole:
             return v
         if papel in (Qt.DisplayRole, Qt.ToolTipRole):
+            if isinstance(v, dict):  # cabeçalho de grupo: a dica traz tudo por extenso
+                return f"{v['src']} — {v['sit'][1]}\n{v['sub']}" if papel == Qt.ToolTipRole else v["src"]
             if isinstance(v, tuple):
                 v = v[-1]
             if papel == Qt.ToolTipRole and self.colunas[idx.column()].tipo not in ("texto", "check"):
@@ -795,11 +797,12 @@ class Modelo(QtCore.QAbstractTableModel):
             return int(DIR if c.alinhar == "e" else ESQ)
         return None
 
-    def inserir(self, iid, valores, tags):
-        n = len(self.linhas)
+    def inserir(self, iid, valores, tags, pos=None):
+        n = len(self.linhas) if pos is None else pos
         self.beginInsertRows(QtCore.QModelIndex(), n, n)
-        self.linhas.append([iid, list(valores), set(tags)])
-        self.indice[iid] = n
+        self.linhas.insert(n, [iid, list(valores), set(tags)])
+        for i in range(n, len(self.linhas)):  # no meio: as linhas de baixo mudam de posição
+            self.indice[self.linhas[i][0]] = i
         self._marcar(iid, tags)
         self.endInsertRows()
 
@@ -846,12 +849,19 @@ class Delegado(QtWidgets.QStyledItemDelegate):
         ultima = visiveis and idx.column() == visiveis[-1]
 
         # fundo da linha: hover, selecionada ou em andamento (pílula sobre a linha toda)
+        grupo = "grupo" in tags
         sel = vista.selecionavel and vista.selectionModel().isRowSelected(idx.row(), QtCore.QModelIndex())
         fundo = None
         if "ativa" in tags or sel:
             fundo = cor("destaque_claro")
         elif idx.row() == vista.linha_hover:
             fundo = cor("hover_linha")
+        elif grupo:  # cabeçalho de conta: faixa levemente destacada
+            fundo = misturar("superficie2", "trilho", 0.55)
+        if grupo and idx.row() > 0:  # linha que separa uma conta da anterior
+            p.setPen(QtGui.QPen(cor("borda"), 1))
+            p.drawLine(QPointF(r.x() + (8 if primeira else 0), r.y() + 0.5),
+                       QPointF(r.right() - (8 if ultima else 0) + 1, r.y() + 0.5))
         if fundo is not None:
             esq = 4 if primeira else 0
             dir_ = -4 if ultima else 0
@@ -881,8 +891,13 @@ class Delegado(QtWidgets.QStyledItemDelegate):
 
         muda = "muda" in tags
         c = r.adjusted(14, 0, -14, 0)
+        if primeira and "filho" in tags:  # pasta dentro de uma conta: recuo + linha guia
+            p.fillRect(QRectF(r.x() + 21, r.y(), 2, r.height() + 1), cor("borda"))
+            c.adjust(22, 0, 0, 0)
         alinhar = DIR if col.alinhar == "e" else ESQ
-        if col.tipo == "status" and valor:
+        if grupo and isinstance(valor, dict):
+            self._grupo(p, r, valor)
+        elif col.tipo == "status" and valor:
             self._situacao(p, c, *valor)
         elif col.tipo == "check" and valor:
             marcado, txt = valor
@@ -903,11 +918,47 @@ class Delegado(QtWidgets.QStyledItemDelegate):
             f = fonte(9.5 if col.tipo == "mono" else 10, 400, mono=col.tipo == "mono",
                       tabular=col.tipo == "num")
             tinta = "muda" if muda or (col.tipo == "num" and s in ("0", "—")) else "tinta"
+            if grupo:  # totais da conta em negrito
+                f = fonte(10, 600, tabular=col.tipo == "num")
             if col.tipo == "num" and col.id == "err" and s not in ("0", "—", ""):
                 tinta = "erro_texto"
                 f = fonte(10, 600, tabular=True)
             texto(p, c, s, f, tinta, alinhar)
         p.restore()
+
+    def _grupo(self, p, r, g):
+        """Cabeçalho de uma conta: seta, avatar, e-mail, resumo e situação."""
+        cy = r.center().y()
+        x = r.x() + 14
+        pintar_icone(p, "caret-down-bold" if g.get("aberto") else "caret-right-bold",
+                     "tinta2" if g.get("filhos") else "borda_forte", QRectF(x, cy - 7, 14, 14))
+        chave, txt = g["sit"]
+        _, tinta, fundo = VISUAL_SITUACAO.get(chave, VISUAL_SITUACAO["pendente"])
+        avatar = QRectF(x + 22, cy - 16, 32, 32)
+        p.setPen(Qt.NoPen)
+        p.setBrush(cor(fundo))
+        p.drawEllipse(avatar)
+        texto(p, avatar, (g["src"][:1] or "?").upper(), fonte(11, 700), tinta, CENTRO, elidir=False)
+        if r.width() >= 440:  # pílula com o texto
+            w_sel = largura_texto(txt, fonte(9, 600)) + 40
+            sel = QRectF(r.right() - w_sel - 12, r.y(), w_sel, r.height())
+            self._situacao(p, sel, chave, txt)
+        else:  # pouco espaço: só o ícone, para o e-mail caber (o texto vai na dica)
+            sel = QRectF(r.right() - 38, cy - 13, 26, 26)
+            nome_icone = VISUAL_SITUACAO.get(chave, VISUAL_SITUACAO["pendente"])[0]
+            p.setPen(Qt.NoPen)
+            p.setBrush(cor(fundo))
+            p.drawEllipse(sel)
+            ri = sel.adjusted(6, 6, -6, -6)
+            if nome_icone:
+                pintar_icone(p, nome_icone, tinta, ri)
+            else:
+                desenhar_spinner(p, ri.center(), 5.5, cor(tinta), 2)
+        tx = avatar.right() + 12
+        tw = sel.x() - tx - 12
+        texto(p, QRectF(tx, cy - 19, tw, 20), g["src"], fonte(10.5, 600), "tinta")
+        texto(p, QRectF(tx, cy + 1, tw, 18), g["sub"], fonte(8.5),
+              "erro_texto" if g.get("falha") else "muda")
 
     def _situacao(self, p, r, chave, txt):
         nome_icone, tinta, fundo = VISUAL_SITUACAO.get(chave, VISUAL_SITUACAO["pendente"])
@@ -1080,28 +1131,101 @@ class Tabela(Cartao):
         self.lay.addWidget(self.vista)
         self.modelo = self.vista.modelo
         self._seq = 0
+        # grupos (ex.: uma conta com as suas pastas): o cabeçalho ocupa as primeiras
+        # `span_grupo` colunas e um clique nele abre/fecha as linhas de dentro
+        self.span_grupo = 1
+        self.grupos, self.abertos, self.manuais, self.pais = {}, {}, set(), {}
+        self.vista.linha_clicada.connect(self._clique)
         TEMA.mudou.connect(self.vista.viewport().update)
 
     def limpar(self):
         self.modelo.limpar()
+        self.grupos, self.abertos, self.manuais, self.pais = {}, {}, set(), {}
+        self.vista.clearSpans()
 
     def no_fim(self):
         b = self.vista.verticalScrollBar()
         return b.value() >= b.maximum() - 4
 
-    def inserir(self, valores, tags=(), iid=None, rolar=False):
-        """rolar=True acompanha o fim só se você já estava no fim (não tira do lugar)."""
-        acompanhar = rolar and self.no_fim()
+    def inserir(self, valores, tags=(), iid=None, rolar=False, grupo=None):
+        """rolar=True acompanha o fim só se você já estava no fim (não tira do lugar).
+        grupo=id: a linha entra no fim daquele grupo, recuada."""
+        acompanhar = rolar and self.no_fim() and grupo is None
         if iid is None:
             self._seq += 1
             iid = f"_{self._seq}"
-        self.modelo.inserir(iid, valores, tags)
+        if grupo is None:
+            self.modelo.inserir(iid, valores, tags)
+        else:
+            filhos = self.grupos[grupo]
+            pos = self.modelo.indice[filhos[-1] if filhos else grupo] + 1
+            self.modelo.inserir(iid, valores, set(tags) | {"filho"}, pos)
+            filhos.append(iid)
+            self.pais[iid] = grupo
+            cab = self.modelo.linhas[self.modelo.indice[grupo]][1]
+            cab[0] = dict(cab[0], filhos=len(filhos))  # a seta do grupo deixa de ficar apagada
+            self._arrumar()
         if acompanhar:
             self.vista.scrollToBottom()
         return iid
 
     def atualizar(self, iid, valores, tags=()):
+        if iid in self.pais:
+            tags = set(tags) | {"filho"}
         self.modelo.atualizar(iid, valores, tags)
+
+    def grupo(self, gid, valores, tags=(), aberto=None):
+        """Cria ou atualiza o cabeçalho de um grupo. valores[0] é um dict com src, sub e
+        sit; aberto=True/False abre ou fecha, a menos que você já tenha mexido nele."""
+        valores = list(valores)
+        info = dict(valores[0])
+        mudou = False
+        if aberto is not None and gid not in self.manuais and self.abertos.get(gid) != aberto:
+            self.abertos[gid] = aberto
+            mudou = True
+        info["aberto"] = self.abertos.setdefault(gid, True)
+        info["filhos"] = len(self.grupos.get(gid, ()))
+        valores[0] = info
+        tags = set(tags) | {"grupo"}
+        if gid in self.modelo.indice:
+            self.modelo.atualizar(gid, valores, tags)
+            if mudou:
+                self._visibilidade(gid)
+        else:
+            self.grupos[gid] = []
+            self.modelo.inserir(gid, valores, tags)
+            self.vista.clicavel = True
+            self._arrumar()
+
+    def alternar(self, gid, aberto=None, manual=False):
+        aberto = not self.abertos.get(gid, True) if aberto is None else aberto
+        self.abertos[gid] = aberto
+        if manual:
+            self.manuais.add(gid)
+        linha = self.modelo.linhas[self.modelo.indice[gid]]
+        linha[1][0] = dict(linha[1][0], aberto=aberto)
+        self.modelo.atualizar(gid)
+        self._visibilidade(gid)
+
+    def _clique(self, iid):
+        if iid in self.grupos:
+            self.alternar(iid, manual=True)
+
+    def _visibilidade(self, gid):
+        aberto = self.abertos.get(gid, True)
+        for iid in self.grupos[gid]:
+            self.vista.setRowHidden(self.modelo.indice[iid], not aberto)
+
+    def _arrumar(self):
+        """Depois de inserir no meio: refaz a mesclagem, a altura e o que fica escondido."""
+        self.vista.clearSpans()
+        cab = self.vista.verticalHeader()
+        for gid in self.grupos:
+            linha = self.modelo.indice[gid]
+            if self.span_grupo > 1:
+                self.vista.setSpan(linha, 0, 1, self.span_grupo)
+            cab.resizeSection(linha, 60)
+            self._visibilidade(gid)
 
     def valor(self, iid, cid):
         return self.modelo.linhas[self.modelo.indice[iid]][1][self.ids.index(cid)]

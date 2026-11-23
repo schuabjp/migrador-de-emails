@@ -179,6 +179,10 @@ class Ui:
     def conta_concluida(self, n, status, detalhe):
         pass
 
+    def pastas_listadas(self, nomes):
+        """Pastas que serão migradas nesta conta, antes de começar."""
+        pass
+
     def pasta_iniciada(self, nome, mensagens, ja_existem):
         pass
 
@@ -451,9 +455,9 @@ def imap2imap(a):
     dst_delim = delimitador(dst)
     total = Stats()
 
-    for nome, delim in listar_pastas(src):
-        if not escolhida(a, nome):
-            continue
+    pastas = [(nome, delim) for nome, delim in listar_pastas(src) if escolhida(a, nome)]
+    ui.pastas_listadas([nome for nome, _ in pastas])
+    for nome, delim in pastas:
         destino = "INBOX" if nome.upper() == "INBOX" else nome.replace(delim, dst_delim)
         ui.secao(f"{nome} → {destino}")
         garantir_pasta(dst, destino)
@@ -487,9 +491,9 @@ def nome_seguro(s):
 def exportar(a):
     src = conta_de(a, "src").conectar()
     total = Stats()
-    for nome, delim in listar_pastas(src):
-        if not escolhida(a, nome):
-            continue
+    pastas = [(nome, delim) for nome, delim in listar_pastas(src) if escolhida(a, nome)]
+    ui.pastas_listadas([nome for nome, _ in pastas])
+    for nome, delim in pastas:
         caminho = os.path.join(a.dir, *[nome_seguro(p) for p in nome.split(delim)])
         os.makedirs(caminho, exist_ok=True)
         uids = uids_da_pasta(src, nome)
