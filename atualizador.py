@@ -2,8 +2,9 @@
 Atualização automática pelo GitHub Releases.
 
 1. buscar(): consulta a última versão publicada; se for mais nova, devolve os links.
-2. baixar(): grava o MigradorEmails.exe novo na mesma pasta, como
-   MigradorEmails.novo.exe, e confere o SHA-256 publicado junto.
+2. baixar(): grava o MigradorEmails.exe novo numa pasta interna
+   (%LOCALAPPDATA%\\MigradorEmails\\atualizacao) e confere o SHA-256 publicado junto.
+   A pasta do programa só vê o próprio MigradorEmails.exe ser trocado.
 3. instalar(): abre o novo com --atualizar; o app atual fecha em seguida.
 4. concluir(): já no novo, espera o antigo liberar o arquivo, copia a si mesmo por
    cima dele e abre a versão instalada, que apaga a sobra (limpar_sobras()).
@@ -54,12 +55,26 @@ def exe_atual():
     return os.path.abspath(sys.executable)
 
 
+def pasta_download():
+    """Pasta interna do download: fora da pasta do programa (que pode estar no OneDrive,
+    na Área de Trabalho...), para não aparecer um segundo .exe para quem usa."""
+    base = os.environ.get("LOCALAPPDATA") or os.path.dirname(exe_atual())
+    return os.path.join(base, "MigradorEmails", "atualizacao")
+
+
 def caminho_novo():
-    return os.path.join(os.path.dirname(exe_atual()), "MigradorEmails.novo.exe")
+    return os.path.join(pasta_download(), "MigradorEmails.novo.exe")
 
 
 def caminho_info():
-    return os.path.join(os.path.dirname(exe_atual()), "MigradorEmails.novo.json")
+    return os.path.join(pasta_download(), "MigradorEmails.novo.json")
+
+
+def _sobras_antigas():
+    """Onde as versões até a 1.1.0 baixavam a atualização: ao lado do próprio .exe."""
+    pasta = os.path.dirname(exe_atual())
+    return [os.path.join(pasta, n) for n in ("MigradorEmails.novo.json", "MigradorEmails.novo.exe",
+                                             "MigradorEmails.novo.exe.part")]
 
 
 def versao_tupla(v):
@@ -134,9 +149,20 @@ def explicar(erro):
     return f"Erro inesperado: {erro}"
 
 
+def _pasta_gravavel(pasta):
+    """Levanta PermissionError se não der para criar arquivos na pasta."""
+    teste = os.path.join(pasta, f".migrador-teste-{os.getpid()}")
+    with open(teste, "wb"):
+        pass
+    os.remove(teste)
+
+
 def baixar(info, progresso=None):
-    """Baixa para MigradorEmails.novo.exe e confere o SHA-256. PermissionError
-    significa que a pasta do programa não aceita gravação (ex.: Arquivos de Programas)."""
+    """Baixa para a pasta interna e confere o SHA-256. PermissionError significa que a
+    pasta do programa não aceita gravação (ex.: Arquivos de Programas): a troca do .exe
+    não daria certo, então nem vale baixar."""
+    _pasta_gravavel(os.path.dirname(exe_atual()))
+    os.makedirs(pasta_download(), exist_ok=True)
     with _abrir(info["url_sha"], 30) as r:
         esperado = r.read().decode("ascii", "replace").split()[0].lower()
     destino = caminho_novo()
@@ -185,23 +211,33 @@ def pendente(versao_atual=versao.VERSAO):
         return None
 
 
-def limpar_sobras(versao_atual=versao.VERSAO):
-    """Depois de atualizar, apaga o MigradorEmails.novo.exe que sobrou. Em segundo
-    plano e com novas tentativas: ele pode estar terminando de fechar."""
-    if not empacotado() or pendente(versao_atual):
+def limpar_sobras(versao_atual=versao.VERSAO, espera=120):
+    """Depois de atualizar, apaga a cópia baixada que sobrou. Em segundo plano e com
+    paciência: o .exe novo pode estar terminando de fechar, e antivírus ou OneDrive
+    podem segurar o arquivo por um tempo. O que não sair agora sai na próxima abertura."""
+    if not empacotado():
         return
+    caminhos = _sobras_antigas() + [exe_atual() + ".instalando"]
+    if not pendente(versao_atual):  # uma versão baixada esperando instalação fica
+        caminhos += [caminho_info(), caminho_novo(), caminho_novo() + ".part"]
 
     def tarefa():
-        for caminho in (caminho_info(), caminho_novo(), caminho_novo() + ".part",
-                        exe_atual() + ".instalando"):
-            for _ in range(20):
+        restantes = [c for c in caminhos if os.path.exists(c)]
+        fim = time.time() + espera
+        while restantes:
+            for c in list(restantes):
                 try:
-                    os.remove(caminho)
-                    break
+                    os.remove(c)
+                    restantes.remove(c)
                 except FileNotFoundError:
-                    break
+                    restantes.remove(c)
                 except OSError:
-                    time.sleep(0.5)
+                    pass
+            if not restantes or time.time() > fim:
+                break
+            time.sleep(1)
+        for c in restantes:
+            registrar(f"não foi possível apagar {c} agora (em uso); nova tentativa ao abrir")
     threading.Thread(target=tarefa, daemon=True).start()
 
 
