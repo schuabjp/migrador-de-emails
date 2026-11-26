@@ -241,6 +241,61 @@ def limpar_sobras(versao_atual=versao.VERSAO, espera=120):
     threading.Thread(target=tarefa, daemon=True).start()
 
 
+_instancia = None  # (arquivo aberto e travado, caminho) desta janela
+
+
+def _pasta_instancias():
+    return os.path.join(os.path.dirname(LOG), "instancias")
+
+
+def _prefixo_instancia():
+    """Só contam as janelas abertas a partir do mesmo .exe (outra cópia em outra pasta,
+    não atrapalha a troca deste)."""
+    return hashlib.sha256(exe_atual().lower().encode()).hexdigest()[:12]
+
+
+def registrar_instancia():
+    """Marca esta janela como aberta: um arquivo travado enquanto o processo existir
+    (o Windows solta a trava sozinho quando ele fecha, mesmo se travar ou for morto)."""
+    global _instancia
+    if not empacotado() or _instancia:
+        return
+    import msvcrt
+    try:
+        os.makedirs(_pasta_instancias(), exist_ok=True)
+        caminho = os.path.join(_pasta_instancias(), f"{_prefixo_instancia()}-{os.getpid()}.lock")
+        f = open(caminho, "w+b")
+        f.write(b"1")
+        f.flush()
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        _instancia = (f, caminho)
+    except OSError as e:
+        registrar(f"não foi possível registrar esta janela: {e!r}")
+
+
+def outras_instancias():
+    """Quantas outras janelas do Migrador estão abertas a partir deste mesmo .exe."""
+    if not empacotado():
+        return 0
+    import glob
+    import msvcrt
+    abertas = 0
+    for caminho in glob.glob(os.path.join(_pasta_instancias(), f"{_prefixo_instancia()}-*.lock")):
+        if _instancia and os.path.normcase(caminho) == os.path.normcase(_instancia[1]):
+            continue
+        try:
+            with open(caminho, "r+b") as f:
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # consegui travar: já fechou
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            os.remove(caminho)  # sobra de uma janela que já fechou
+        except FileNotFoundError:
+            pass
+        except OSError:
+            abertas += 1
+    return abertas
+
+
 def instalar(reabrir=True):
     """Passa a troca para o executável novo; quem chama deve fechar o app logo depois."""
     _iniciar([caminho_novo(), "--atualizar", exe_atual()] + (["--reabrir"] if reabrir else []))
@@ -268,7 +323,9 @@ def concluir(argv):
         registrar(f"falha ao preparar a instalação: {e!r}")
         _avisar(f"Não foi possível instalar a atualização:\n{e}")
         return True
-    for _ in range(120):  # até ~1 min esperando o app antigo fechar e soltar o arquivo
+    # até ~3 min esperando o arquivo ser solto: o app antigo terminando de fechar, outra
+    # janela do Migrador aberta, ou antivírus/OneDrive inspecionando o .exe
+    for _ in range(360):
         try:
             os.replace(temporario, destino)  # troca inteira de uma vez: nunca fica pela metade
             break
@@ -281,9 +338,10 @@ def concluir(argv):
             os.remove(temporario)
         except OSError:
             pass
-        _avisar("Não foi possível concluir a atualização porque o Migrador ainda está "
-                "aberto.\nFeche todas as janelas dele e abra de novo: a atualização "
-                "baixada será oferecida outra vez.")
+        _avisar("Não foi possível concluir a atualização: o MigradorEmails.exe continua em "
+                "uso (outra janela do Migrador aberta, ou o antivírus examinando o arquivo).\n\n"
+                "Feche todas as janelas do Migrador e abra de novo: a versão baixada é "
+                "instalada quando você fechar o programa.")
         return True
     registrar(f"versão instalada em {destino}")
     if reabrir:

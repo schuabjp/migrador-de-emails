@@ -610,6 +610,7 @@ class App(QtWidgets.QMainWindow):
         self.t_relogio = QtCore.QTimer(self)
         self.t_relogio.timeout.connect(self._relogio)
         if atualizador.empacotado():
+            atualizador.registrar_instancia()  # para a atualização saber se há outra janela aberta
             self.atualizacao_pronta = atualizador.pendente()
             if self.atualizacao_pronta:  # baixada antes, mas ainda não instalada
                 self.lateral.definir_aviso("Atualização pronta", "clique para instalar",
@@ -2009,6 +2010,15 @@ class App(QtWidgets.QMainWindow):
             avisar(self, "Atualização", erro)
 
     def reiniciar_para_atualizar(self):
+        outras = atualizador.outras_instancias()
+        if outras:  # com outra janela usando o .exe, o Windows não deixa trocá-lo
+            avisar(self, "Feche as outras janelas do Migrador",
+                   f"{plural(outras, 'outra janela', 'outras janelas')} do Migrador "
+                   f"{'está aberta' if outras == 1 else 'estão abertas'} neste computador, e o "
+                   "programa só pode ser trocado com todas fechadas.\n\nFeche as outras e clique "
+                   "em Reiniciar agora de novo. Se preferir, feche todas: a atualização é "
+                   "instalada quando a última fechar.")
+            return
         self._reiniciar = True
         self.close()
 
@@ -2087,11 +2097,16 @@ class App(QtWidgets.QMainWindow):
                             resumo="O aplicativo foi fechado durante a migração.")
             self._salvar_relatorio()
         self._salvar_perfil()
-        if self.atualizacao_pronta and atualizador.empacotado():
-            try:  # ao fechar, a versão baixada é instalada; ao reiniciar, já abre nela
-                atualizador.instalar(reabrir=reiniciar)
-            except OSError as erro:
-                atualizador.registrar(f"falha ao iniciar a instalação: {erro!r}")
+        # ao fechar, a versão baixada é instalada (ao reiniciar, já abre nela); pode ter sido
+        # baixada por outra janela, então confere de novo
+        if atualizador.empacotado() and (self.atualizacao_pronta or atualizador.pendente()):
+            if atualizador.outras_instancias():  # a última janela a fechar é que instala
+                atualizador.registrar("instalação adiada: há outra janela do Migrador aberta")
+            else:
+                try:
+                    atualizador.instalar(reabrir=reiniciar)
+                except OSError as erro:
+                    atualizador.registrar(f"falha ao iniciar a instalação: {erro!r}")
         e.accept()
         QtWidgets.QApplication.quit()
 
